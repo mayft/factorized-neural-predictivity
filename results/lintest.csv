@@ -1,0 +1,3 @@
+seed,epoch,test-loss,total-acc,test-acc_feature0-linear,test-acc_feature1-linear,test-loss_feature0-linear,test-loss_feature1-linear
+0,0,0.68541086,0.59521484,0.56933594,0.62109375,0.68203092,0.68879086
+0,19,0.65414381,0.82910156,0.80078125,0.85742188,0.64479113,0.66349649

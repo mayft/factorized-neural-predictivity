@@ -1,0 +1,3 @@
+seed, epoch, test-loss, total-variance, total-acc, test-acc_feature0-linear, test-loss_feature0-linear, rep-R2_feature0-linear
+0,0,0.69631779,0.00000000,0.48730469,0.48730469,0.69631779,0.00000000
+_feature1-xor_xor_xor
