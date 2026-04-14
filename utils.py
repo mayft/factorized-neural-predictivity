@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset
+
 from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 
 from sklearn import linear_model
 
 import numpy as np
+import re
 from tqdm import tqdm
 from collections import OrderedDict
 
@@ -59,12 +61,6 @@ class Data(Dataset):
         return len(self.data)
 
 
-def to_tensors(dataset, device='cpu'):
-    x = torch.tensor(dataset['inputs'], device=device, dtype=torch.float)
-    y = torch.tensor(dataset['labels'], device=device, dtype=torch.float)
-    return x,y
-
-
 class MLP(nn.Module):
     def __init__(self, layer_sizes: list[int]):
         super(MLP, self).__init__()
@@ -86,6 +82,11 @@ class MLP(nn.Module):
         out = self.output(x)
         return out, x
 
+def load_model(model_name,seed=0):
+    state_dict = torch.load(f'models/{model_name}-{seed}.pt')
+    m= MLP(layer_sizes=[64, 256, 128, 64, 64, len(state_dict['output.weight'])])
+    m.load_state_dict(state_dict)
+    return m
 
 def analyze_rep_var_explained(fit_reps, fit_labels, test_reps, test_labels):
     scores = []
@@ -105,8 +106,7 @@ def accuracy(y,labels):
     return [((y > 0) == labels).float().mean()]+accuracy
 
 
-
-def run(data_features=FEATURES, train_features=None, pretrain=None, units_per_feature=16, max_epochs=50000, train_size=TRAIN_DATASET_SIZE,batch_size=BATCH_SIZE,seeds=1, device='cpu', filename='results', epsilon=0, verbose=0,record_variance=False,early_stopping=True):
+def run(data_features=FEATURES, train_features=None, pretrain=None, units_per_feature=16, max_epochs=50000, train_size=TRAIN_DATASET_SIZE,batch_size=BATCH_SIZE,seeds=1, device='cpu', filename='results', epsilon=0., verbose=0,record_variance=False,early_stopping=True):
     device_ = torch.device(device)
     out_features = len(train_features) if train_features else len(data_features)
     model_layers = [units_per_feature*len(data_features), 256, 128, 64, 64, out_features]
@@ -176,10 +176,12 @@ def run(data_features=FEATURES, train_features=None, pretrain=None, units_per_fe
                         reps = torch.stack([val_reps,test_reps],dim=0)
                         vars_ = torch.cat([vars_,reps])
 
-                outputs= (seed, epoch, test_loss, *test_accuracies, *test_feature_losses)
-                file.write(out_format % outputs)
-                if pretrain:
-                    test_loss = criterion(y_pred[:,current_feature],y_test[:,current_feature])
+                    if pretrain:
+                        test_loss = criterion(y_pred[:, current_feature], y_test[:, current_feature])
+
+                    outputs= (seed, epoch, test_loss, *test_accuracies, *test_feature_losses)
+                    file.write(out_format % outputs)
+
                 if verbose and epoch%1000==0:
                     print(f'epoch {epoch} test loss {test_loss}')
                 if test_loss < epsilon:
@@ -191,13 +193,16 @@ def run(data_features=FEATURES, train_features=None, pretrain=None, units_per_fe
                     elif early_stopping:
                         print(f'stopping early at epoch {epoch}')
                         break
+
         file.flush()
+
         if record_variance:
             for i in range(0,len(vars_),2):
                 variance_scores, total_variance = analyze_rep_var_explained(vars_[i].cpu(), val_data['labels'], vars_[i+1].cpu(), test_data['labels'])
                 v_out = (seed,total_variance,*variance_scores)
                 v_file.write(v_format % v_out)
-        v_file.flush()
+
+            v_file.flush()
         models.append(model)
         path =f'models/{filename}-{seed}.pt'
         torch.save(model.state_dict(),path)
@@ -205,20 +210,30 @@ def run(data_features=FEATURES, train_features=None, pretrain=None, units_per_fe
 
     return models
 
+def label_features(features,default=True):
+    if default:
+        return {features[0]:'easy-0',features[1]:'hard-1'}
+    names = {}
+    for f in features:
+        pattern = r'feature(\d+)-(.*)$'
+        match = re.search(pattern,f)
+        if match:
+            if match.group(2)=='linear':
+                names[f]=f'easy-{match.group(1)}'
+                continue
+            elif match.group(2)=='xor_xor_xor':
+                names[f]=f'hard-{match.group(1)}'
+                continue
+        names[f] = f'feature-{len(names)}'
+    return names
+
 if __name__ == "__main__":
 
-    run_name = 'pretrain_easy-v3'
-    print(run_name)
-    run(data_features=['linear', 'xor_xor_xor'], seeds=5, max_epochs=30000, epsilon=1e-3,filename=run_name, device='cpu', record_variance=True, pretrain=[0, 5000], units_per_feature=32,early_stopping=False)
-
-    run_name = 'pretrain_hard-v3'
-    print(run_name)
-    run(data_features=['linear', 'xor_xor_xor'], seeds=5, max_epochs=30000, epsilon=1e-3,filename=run_name, device='cpu', record_variance=True, pretrain=[1, 25000], units_per_feature=32,early_stopping=False)
-
-    #run_name = 'multiple_easy-v1'
+    run_name = 'easy-v2'
     #print(run_name)
-    #run(data_features=['linear', 'linear'], seeds=5, max_epochs=200000, epsilon=1e-3,filename=run_name, device='cpu',record_variance=True)
+    #run(data_features=['linear', 'xor_xor_xor'], seeds=5, max_epochs=2000, epsilon=1e-3,filename=run_name, device='cpu', train_features=[0], units_per_feature=32,record_variance=True,early_stopping=False)
 
-    #run_name = 'multiple_hard-v1'
+
+    #run_name = 'hard-v2'
     #print(run_name)
-    #run(data_features=['xor_xor_xor', 'xor_xor_xor'], seeds=5, max_epochs=200000, epsilon=1e-3,filename=run_name, device='cpu',record_variance=True)
+    #run(data_features=['linear', 'xor_xor_xor'], seeds=5, max_epochs=15000, epsilon=1e-3, filename=run_name,device='cpu', train_features=[1], units_per_feature=32, record_variance=True, early_stopping=False)
