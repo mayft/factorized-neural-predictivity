@@ -138,18 +138,18 @@ if __name__ == "__main__":
 
     models = {
         'resnet18': Model('resnet18',resnet18,resnet_layers,trained=True),
-        'alexnet': Model('alexnet',alexnet,alexnet_layers,trained=True),
-        'vit': Model('vit',vit_b_16,vit_layers,trained=True),
-        'resnet18_untrained': Model('resnet18_untrained',resnet18,resnet_layers,trained=False),
-        'alexnet_untrained': Model('alexnet_untrained',alexnet,alexnet_layers,trained=False),
-        'vit_untrained':Model('vit_untrained',vit_b_16,vit_layers,trained=False),
+        #'alexnet': Model('alexnet',alexnet,alexnet_layers,trained=True),
+        #'vit': Model('vit',vit_b_16,vit_layers,trained=True),
+        #'resnet18_untrained': Model('resnet18_untrained',resnet18,resnet_layers,trained=False),
+        #'alexnet_untrained': Model('alexnet_untrained',alexnet,alexnet_layers,trained=False),
+        #'vit_untrained':Model('vit_untrained',vit_b_16,vit_layers,trained=False),
     }
 
     metrics = ['ridge_cv','pls_cv']
 
     regions = {
-        'IT': get_dataset('MajajHong2015.public', 'IT'),
-        'V4': get_dataset('MajajHong2015.public', 'V4'),
+        #'IT': get_dataset('MajajHong2015.public', 'IT'),
+        #'V4': get_dataset('MajajHong2015.public', 'V4'),
         'V2': get_dataset('FreemanZiemba2013.public', 'V2'),
         'V1': get_dataset('FreemanZiemba2013.public', 'V1')
     }
@@ -168,7 +168,7 @@ if __name__ == "__main__":
             prediction_scores = {}
             for region, dataset in regions.items():
                 print (f'scoring {name} on {region} data with {metric}')
-                benchmark = MyBenchmark(identifier='benchmark', assembly=dataset, region=region,metric=metric,consistent=consistent_pcs[region],pca=False)
+                benchmark = MyBenchmark(identifier='benchmark', assembly=dataset, region=region,metric=metric,consistent=consistent_pcs[region],pcs=False)
                 prediction_scores[region] = model_scorer(benchmark,model.layers)
 
-            get_layer_scores(prediction_scores).to_csv(f'neural_prediction_results_{model.identifier}_{metric}.csv')
+            get_layer_scores(prediction_scores).to_csv(f'neural_prediction_results/{model.identifier}_{metric}.csv')
