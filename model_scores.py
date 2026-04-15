@@ -5,6 +5,8 @@ from brainscore_vision import load_metric, load_dataset
 from brainscore_vision.model_helpers.brain_transformation import LayerScores
 from brainscore_vision.benchmark_helpers.screen import place_on_screen
 from brainscore_vision.model_helpers.activations.pytorch import PytorchWrapper,load_preprocess_images
+from brainscore_vision.metrics.regression_correlation import CrossRegressedCorrelation, pls_regression,pearsonr_correlation
+from brainscore_core.supported_data_standards.brainio.assemblies import merge_data_arrays
 
 import functools
 from torchvision.models import resnet18, alexnet,vit_b_16
@@ -85,21 +87,26 @@ class PCARidgeRegression:
         return self._regression(source,self.pcs)
 
 class MyBenchmark(Benchmark):
-    def __init__(self,identifier,metric,assembly,region,visual_degrees=8,num_trials=1,consistent=None,pcs=False):
+    def __init__(self,identifier,metric,assembly,region,visual_degrees=8,num_trials=1,consistent=None,pcs=False,n=None):
         self._assembly = assembly
         self.region = region
         cvk = {'stratification_coord':None}
         #if metric == 'pcr_cv2' or metric == 'pcr_cv' or metric == 'pcr_cv3':
         #    self._metric = PCARidgeRegression(assembly,consistent)
         #else:
-        self._metric = load_metric(metric,crossvalidation_kwargs=cvk)
+        self._identifier = f'{identifier}_{metric}_{region}'
+        if metric == 'pls_cvs':
+            self._metric = CrossRegressedCorrelation(regression=pls_regression(regression_kwargs={'n_components':n}),
+                                               correlation=pearsonr_correlation(),crossvalidation_kwargs=cvk)
+            self._identifier=f'{self._identifier}_{n}'    
+        else:
+            self._metric = load_metric(metric,crossvalidation_kwargs=cvk)
         self._visual_degrees=visual_degrees
         self._number_of_trials = num_trials
-        self._identifier = f'{identifier}_{metric}_{region}'
         if pcs:
             self._assembly = apply_pca(self.assembly)
             self._assembly = self._assembly.isel(neuroid=consistent)
-            self._identifier = f'{identifier}_{metric}_{region}_pca'
+            self._identifier = f'{self._identifier}_pca'
 
     @property
     def identifier(self):
@@ -113,7 +120,15 @@ class MyBenchmark(Benchmark):
         if 'time_bin' in source_assembly.dims and source_assembly.sizes['time_bin'] == 1:
             source_assembly = source_assembly.squeeze('time_bin')
 
-        return self._metric(source_assembly, self._assembly)
+        results=self._metric(source_assembly, self._assembly)
+        '''for i,metric in enumerate(self._metrics):
+            score = 
+            #score = score.expand_dims('comp')
+            #score['comp'] = [i*5+10]
+            results.append(score)
+        results = xr.concat(results,dim='comp')
+        print(results.head())'''
+        return results
 
 def get_layer_scores(scores_data):
     benchmarks = {}
@@ -138,20 +153,20 @@ if __name__ == "__main__":
 
     models = {
         'resnet18': Model('resnet18',resnet18,resnet_layers,trained=True),
-        #'alexnet': Model('alexnet',alexnet,alexnet_layers,trained=True),
-        #'vit': Model('vit',vit_b_16,vit_layers,trained=True),
-        #'resnet18_untrained': Model('resnet18_untrained',resnet18,resnet_layers,trained=False),
-        #'alexnet_untrained': Model('alexnet_untrained',alexnet,alexnet_layers,trained=False),
-        #'vit_untrained':Model('vit_untrained',vit_b_16,vit_layers,trained=False),
+        'alexnet': Model('alexnet',alexnet,alexnet_layers,trained=True),
+        'vit': Model('vit',vit_b_16,vit_layers,trained=True),
+        'resnet18_untrained': Model('resnet18_untrained',resnet18,resnet_layers,trained=False),
+        'alexnet_untrained': Model('alexnet_untrained',alexnet,alexnet_layers,trained=False),
+        'vit_untrained':Model('vit_untrained',vit_b_16,vit_layers,trained=False),
     }
 
-    metrics = ['ridge_cv','pls_cv']
+    metrics = ['pls_cv','ridge_cv']
 
-    regions = {
-        #'IT': get_dataset('MajajHong2015.public', 'IT'),
-        #'V4': get_dataset('MajajHong2015.public', 'V4'),
+    regions = {    
+        'V1': get_dataset('FreemanZiemba2013.public', 'V1'),
         'V2': get_dataset('FreemanZiemba2013.public', 'V2'),
-        'V1': get_dataset('FreemanZiemba2013.public', 'V1')
+        'V4': get_dataset('MajajHong2015.public', 'V4'),
+        'IT': get_dataset('MajajHong2015.public', 'IT'),
     }
 
     consistent_pcs = {
@@ -164,11 +179,13 @@ if __name__ == "__main__":
 
     for name, model in models.items():
         model_scorer = LayerScores(model_identifier=name,activations_model=model.activations,visual_degrees=8)
-        for metric in metrics:    
-            prediction_scores = {}
-            for region, dataset in regions.items():
-                print (f'scoring {name} on {region} data with {metric}')
-                benchmark = MyBenchmark(identifier='benchmark', assembly=dataset, region=region,metric=metric,consistent=consistent_pcs[region],pcs=False)
-                prediction_scores[region] = model_scorer(benchmark,model.layers)
+        for metric in metrics:
+            comps = [10,15,20,25,30] if metric == 'pls_cv' else None
+            for n in comps:
+                prediction_scores = {}
+                for region, dataset in regions.items():
+                    print (f'scoring {name} on {region} data with {metric} {n or ""}')
+                    benchmark = MyBenchmark(identifier='benchmark', assembly=dataset, region=region,metric=metric,consistent=consistent_pcs[region],pcs=False,n=n)
+                    prediction_scores[region] = model_scorer(benchmark,model.layers)
 
-            get_layer_scores(prediction_scores).to_csv(f'neural_prediction_results/{model.identifier}_{metric}.csv')
+                get_layer_scores(prediction_scores).to_csv(f'neural_prediction_results/{model.identifier}_{metric}_{n}.csv')
